@@ -2,7 +2,14 @@ import pytest
 import torch
 from unittest.mock import call, patch
 
-from data.mae.transforms import random_crop, shuffle_players, shuffle_tensor_dim
+from constants import X_MIN, X_MAX, Y_MIN, Y_MAX, Z_MIN, Z_MAX
+from data.mae.transforms import (
+    random_crop,
+    shuffle_players,
+    shuffle_tensor_dim,
+    normalize_tensor,
+    normalize_coordinates,
+)
 
 
 @pytest.mark.parametrize(
@@ -57,3 +64,28 @@ def test_shuffle_tensor_dim(dim):
                 [torch.all(torch.eq(result, x)), torch.all(torch.eq(result, torch.stack([x_1, x_0], dim=dim)))]
             )
         )
+
+
+@pytest.mark.parametrize("_min, _max, expected_return_value", [(0, 2, 0), (1, 2, -1), (0, 1, 1)])
+def test_normalize_tensor(_min, _max, expected_return_value):
+    x = torch.ones(3)
+
+    result = normalize_tensor(x=x, _min=_min, _max=_max)
+
+    assert torch.all(torch.eq(result, torch.tensor([expected_return_value for _ in range(3)])))
+
+
+def test_normalize_coordinates():
+    x = torch.tensor(
+        [
+            [
+                [X_MIN, Y_MIN, Z_MIN],
+                [X_MIN + ((X_MAX - X_MIN) / 2), Y_MIN + ((Y_MAX - Y_MIN) / 2), Z_MIN + ((Z_MAX - Z_MIN) / 2)],
+                [X_MAX, Y_MAX, Z_MAX],
+            ]
+        ]
+    )
+
+    result = normalize_coordinates(x=x)
+
+    assert torch.all(torch.eq(result, torch.tensor([[[-1, -1, -1], [0, 0, 0], [1, 1, 1]]])))
