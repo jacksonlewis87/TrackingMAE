@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 
 @dataclass
-class DataConfig:
+class PreprocessingConfig:
     raw_tracking_path: str
     tensor_path: str
     event_duration: int

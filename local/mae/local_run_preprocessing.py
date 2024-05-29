@@ -1,10 +1,10 @@
 from constants import ROOT_DIR
-from data.data_config import DataConfig
-from data.tracking_preprocessing import preprocess_tracking_data
+from data.preprocessing_config import PreprocessingConfig
+from data.preprocessing import preprocess_tracking_data
 
 
 def do_work():
-    config = DataConfig(
+    config = PreprocessingConfig(
         raw_tracking_path=f"{ROOT_DIR}/data/raw_tracking",
         tensor_path=f"{ROOT_DIR}/data/tensors",
         event_duration=10,

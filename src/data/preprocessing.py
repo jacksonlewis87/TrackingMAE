@@ -1,10 +1,10 @@
 import copy
 import os
 import torch
-from data.data_classes import Coordinate, Frame, Event
-from data.data_config import DataConfig
+from data.tracking_classes import Coordinate, Frame, Event
+from data.preprocessing_config import PreprocessingConfig
 from math import floor
-from utils import load_json
+from utils import load_json, list_files_in_directory
 
 
 def create_coordinate_from_tracking_row(row: list):
@@ -117,7 +117,7 @@ def load_game(path: str, game_id: str):
     return events
 
 
-def filter_events(events: list[Event], config: DataConfig):
+def filter_events(events: list[Event], config: PreprocessingConfig):
     filtered_events = []
     for event in events:
         if (
@@ -192,12 +192,8 @@ def convert_event_to_tensors(events: list[Event]):
     return tensors
 
 
-def get_tracking_game_ids(path: str):
-    return [f[:-5] for f in os.listdir(path) if f[-5:] == ".json"]
-
-
-def preprocess_tracking_data(config: DataConfig):
-    game_ids = get_tracking_game_ids(path=config.raw_tracking_path)
+def preprocess_tracking_data(config: PreprocessingConfig):
+    game_ids = list_files_in_directory(path=config.raw_tracking_path, suffix=".json")
 
     events = []
     for game_id in game_ids:
