@@ -9,18 +9,18 @@ from utils import list_files_in_directory, load_tensor
 
 
 class MAEDataset(Dataset):
-    def __init__(
-        self,
-        config: DataConfig,
-        game_ids: list[str],
-    ) -> None:
+    def __init__(self, config: DataConfig, game_ids: list[str], stage: str = "train") -> None:
         self.config = config
         self.game_ids = game_ids
+        self.stage = stage
 
     def __getitem__(self, index: int):
         x = load_tensor(path=self.config.tensor_path, tensor_name=self.game_ids[index])
         x = random_crop(x=x, length=self.config.num_frames, dim=1)
-        x = shuffle_players(x=x, shuffle_players=self.config.shuffle_players)
+
+        if self.stage != "eval":
+            x = shuffle_players(x=x, shuffle_players=self.config.shuffle_players)
+
         x = normalize_coordinates(x=x)
 
         return x
@@ -54,6 +54,7 @@ class MAEDataModule(LightningDataModule):
         self.val_dataset = MAEDataset(
             config=self.config,
             game_ids=data_split["val"],
+            stage="eval",
         )
 
     def train_dataloader(self) -> DataLoader:

@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import torch
 from matplotlib import animation
-from matplotlib.patches import Circle, Rectangle, Arc
 from data.mae.transforms import normalize_coordinates
 
 
@@ -9,9 +8,18 @@ SCALING_CONSTANT = 100
 
 
 class TrackingVisualization:
-    def __init__(self, path):
-        self.tracking_data = torch.load(path)
-        self.tracking_data = normalize_coordinates(x=self.tracking_data)
+    def __init__(self, tracking_data):
+        self.tracking_data = tracking_data
+
+    @classmethod
+    def from_file_path(cls, path: str):
+        tracking_data = torch.load(path)
+        tracking_data = normalize_coordinates(x=tracking_data)
+        return cls(tracking_data=tracking_data)
+
+    @classmethod
+    def from_tensor(cls, tracking_tensor: torch.tensor):
+        return cls(tracking_data=tracking_tensor)
 
     def update_radius(self, i, player_circles, ball_circle, annotations):
         for j, circle in enumerate(player_circles):
@@ -58,5 +66,5 @@ class TrackingVisualization:
 
 
 def do_work(path: str):
-    tv = TrackingVisualization(path=path)
+    tv = TrackingVisualization.from_file_path(path=path)
     tv.execute()

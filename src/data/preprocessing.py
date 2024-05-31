@@ -195,20 +195,19 @@ def convert_event_to_tensors(events: list[Event]):
 def preprocess_tracking_data(config: PreprocessingConfig):
     game_ids = list_files_in_directory(path=config.raw_tracking_path, suffix=".json")
 
-    events = []
     for game_id in game_ids:
-        events += load_game(path=config.raw_tracking_path, game_id=game_id)
+        events = load_game(path=config.raw_tracking_path, game_id=game_id)
 
-    events = filter_events(events=events, config=config)
-    events = downsample_events(
-        events=events,
-        target_frame_rate=config.target_frame_rate,
-        training_frame_rate=config.training_frame_rate,
-    )
-    events = split_long_events(events=events, duration=config.event_duration * config.training_frame_rate)
+        events = filter_events(events=events, config=config)
+        events = downsample_events(
+            events=events,
+            target_frame_rate=config.target_frame_rate,
+            training_frame_rate=config.training_frame_rate,
+        )
+        events = split_long_events(events=events, duration=config.event_duration * config.training_frame_rate)
 
-    tensors = convert_event_to_tensors(events=events)
+        tensors = convert_event_to_tensors(events=events)
 
-    os.makedirs(config.tensor_path, exist_ok=True)
-    for filename, tensor in tensors.items():
-        torch.save(tensor, f"{config.tensor_path}/{filename}.pt")
+        os.makedirs(config.tensor_path, exist_ok=True)
+        for filename, tensor in tensors.items():
+            torch.save(tensor, f"{config.tensor_path}/{filename}.pt")

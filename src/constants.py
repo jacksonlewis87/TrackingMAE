@@ -9,4 +9,4 @@ X_MAX = 100
 Y_MIN = 0
 Y_MAX = 50
 Z_MIN = 0
-Z_MAX = 100
+Z_MAX = 20

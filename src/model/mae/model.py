@@ -1,101 +1,81 @@
-import collections.abc
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.checkpoint
-from itertools import repeat
-from functools import partial
-from torch.jit import Final
-from typing import Optional
+from pytorch_lightning import LightningModule
+from typing import Tuple
+
+from model.mae.blocks import Decoder2D, MaskedEncoder2D
+from model.mae.masking import get_masking_strategy, MaskingConfig
+from model.mae.model_config import FullConfig
 
 
-class MaskedAutoencoder(nn.Module):
-    """Masked Autoencoder with VisionTransformer backbone"""
-
+class TrackingMaskedAutoEncoder(LightningModule):
     def __init__(
         self,
-        img_size=224,
-        patch_size=16,
-        in_chans=3,
-        embed_dim=1024,
-        depth=24,
-        num_heads=16,
-        decoder_embed_dim=512,
-        decoder_depth=8,
-        decoder_num_heads=16,
-        mlp_ratio=4.0,
-        norm_layer=nn.LayerNorm,
-        norm_pix_loss=False,
+        config: FullConfig,
     ):
         super().__init__()
+        self.config = config
 
-        # --------------------------------------------------------------------------
-        # MAE encoder specifics
-        # self.patch_embed = PatchEmbed(img_size, patch_size, in_chans, embed_dim)
-        num_patches = self.patch_embed.num_patches
+        if self.config.data_config.num_frames % self.config.model_config.num_sequence_patches > 0:
+            print("Error: num_frames must be divisible by num_sequence_patches")
+            raise Exception
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pos_embed = nn.Parameter(
-            torch.zeros(1, num_patches + 1, embed_dim), requires_grad=False
-        )  # fixed sin-cos embedding
+        # B = batch size (self.config.data_config.batch_size)
+        # C = input channels (3: x, y, z) - set as channels below
+        # P = num_players (self.confg.model_config.num_players)
+        # F = total number of frames per player (self.config.data_config.num_frames)
+        # N = number of patches per player (self.config.model_config.num_sequence_patches)
+        # T = total number of patches in a sample (N * P) - set as total_patches below
+        # L = patch length along temporal dimension (F / N) - set as patch_length below
+        # S = patch size, flattened (L * C) - set as patch_size below
 
-        self.blocks = nn.ModuleList(
-            [
-                Block(embed_dim, num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer)
-                for i in range(depth)
-            ]
-        )
-        self.norm = norm_layer(embed_dim)
-        # --------------------------------------------------------------------------
+        self.channels = 3
 
-        # --------------------------------------------------------------------------
-        # MAE decoder specifics
-        self.decoder_embed = nn.Linear(embed_dim, decoder_embed_dim, bias=True)
+        self.total_patches = self.config.model_config.num_sequence_patches * self.config.model_config.num_players
+        self.patch_length = int(self.config.data_config.num_frames / self.config.model_config.num_sequence_patches)
+        self.patch_size = self.patch_length * 3
 
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, decoder_embed_dim))
-
-        self.decoder_pos_embed = nn.Parameter(
-            torch.zeros(1, num_patches + 1, decoder_embed_dim), requires_grad=False
-        )  # fixed sin-cos embedding
-
-        self.decoder_blocks = nn.ModuleList(
-            [
-                Block(
-                    decoder_embed_dim, decoder_num_heads, mlp_ratio, qkv_bias=True, qk_scale=None, norm_layer=norm_layer
-                )
-                for i in range(decoder_depth)
-            ]
+        masking_strategy = get_masking_strategy(
+            masking_strategy=self.config.model_config.masking_strategy,
+            config=MaskingConfig(
+                mask_ratio=self.config.model_config.masking_ratio,
+                indexes=self.config.model_config.masking_indexes,
+                patches_per_index=self.config.model_config.num_sequence_patches,
+            ),
         )
 
-        self.decoder_norm = norm_layer(decoder_embed_dim)
-        self.decoder_pred = nn.Linear(decoder_embed_dim, patch_size**2 * in_chans, bias=True)  # decoder to patch
-        # --------------------------------------------------------------------------
+        self.encoder = MaskedEncoder2D(
+            patch_length=self.patch_length,
+            channels=self.channels,
+            num_patches_x=self.config.model_config.num_players,
+            num_patches_y=self.config.model_config.num_sequence_patches,
+            embedding_dimension=self.config.model_config.embedding_dimension,
+            depth=self.config.model_config.encoder_depth,
+            num_heads=self.config.model_config.num_encoder_heads,
+            masking_strategy=masking_strategy,
+        )
 
-        self.norm_pix_loss = norm_pix_loss
+        self.decoder = Decoder2D(
+            patch_size=self.patch_size,
+            num_patches_x=self.config.model_config.num_players,
+            num_patches_y=self.config.model_config.num_sequence_patches,
+            embedding_dimension=self.config.model_config.embedding_dimension,
+            decoder_embedding_dimension=self.config.model_config.decoder_embedding_dimension,
+            depth=self.config.model_config.decoder_depth,
+            num_heads=self.config.model_config.num_decoder_heads,
+        )
 
         self.initialize_weights()
 
     def initialize_weights(self):
-        # initialization
-        # initialize (and freeze) pos_embed by sin-cos embedding
-        pos_embed = get_2d_sincos_pos_embed(
-            self.pos_embed.shape[-1], int(self.patch_embed.num_patches**0.5), cls_token=True
-        )
-        self.pos_embed.data.copy_(torch.from_numpy(pos_embed).float().unsqueeze(0))
-
-        decoder_pos_embed = get_2d_sincos_pos_embed(
-            self.decoder_pos_embed.shape[-1], int(self.patch_embed.num_patches**0.5), cls_token=True
-        )
-        self.decoder_pos_embed.data.copy_(torch.from_numpy(decoder_pos_embed).float().unsqueeze(0))
-
         # initialize patch_embed like nn.Linear (instead of nn.Conv2d)
-        w = self.patch_embed.proj.weight.data
+        w = self.encoder.patch_embed.proj.weight.data
         torch.nn.init.xavier_uniform_(w.view([w.shape[0], -1]))
 
         # timm's trunc_normal_(std=.02) is effectively normal_(std=0.02) as cutoff is too big (2.)
-        torch.nn.init.normal_(self.cls_token, std=0.02)
-        torch.nn.init.normal_(self.mask_token, std=0.02)
+        torch.nn.init.normal_(self.encoder.class_token, std=0.02)
+        torch.nn.init.normal_(self.decoder.mask_token, std=0.02)
 
         # initialize nn.Linear and nn.LayerNorm
         self.apply(self._init_weights)
@@ -110,379 +90,78 @@ class MaskedAutoencoder(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def patchify(self, imgs):
-        """
-        imgs: (N, 3, H, W)
-        x: (N, L, patch_size**2 *3)
-        """
-        p = self.patch_embed.patch_size[0]
-        assert imgs.shape[2] == imgs.shape[3] and imgs.shape[2] % p == 0
-
-        h = w = imgs.shape[2] // p
-        x = imgs.reshape(shape=(imgs.shape[0], 3, h, p, w, p))
+    def patchify(self, x):
+        # (B, C, P, F) -> (B, T, S)
+        x = x.reshape(
+            shape=(
+                x.shape[0],
+                self.channels,
+                self.config.model_config.num_players,
+                1,
+                self.config.model_config.num_sequence_patches,
+                self.patch_length,
+            )
+        )
         x = torch.einsum("nchpwq->nhwpqc", x)
-        x = x.reshape(shape=(imgs.shape[0], h * w, p**2 * 3))
+        x = x.reshape((x.shape[0], self.total_patches, self.patch_length * self.channels))
         return x
 
     def unpatchify(self, x):
-        """
-        x: (N, L, patch_size**2 *3)
-        imgs: (N, 3, H, W)
-        """
-        p = self.patch_embed.patch_size[0]
-        h = w = int(x.shape[1] ** 0.5)
-        assert h * w == x.shape[1]
-
-        x = x.reshape(shape=(x.shape[0], h, w, p, p, 3))
+        # (B, T, S) -> (B, C, P, F)
+        x = x.reshape(
+            shape=(
+                x.shape[0],
+                self.config.model_config.num_players,
+                self.config.model_config.num_sequence_patches,
+                1,
+                self.patch_length,
+                self.channels,
+            )
+        )
         x = torch.einsum("nhwpqc->nchpwq", x)
-        imgs = x.reshape(shape=(x.shape[0], 3, h * p, h * p))
-        return imgs
-
-    def random_masking(self, x, mask_ratio):
-        """
-        Perform per-sample random masking by per-sample shuffling.
-        Per-sample shuffling is done by argsort random noise.
-        x: [N, L, D], sequence
-        """
-        N, L, D = x.shape  # batch, length, dim
-        len_keep = int(L * (1 - mask_ratio))
-
-        noise = torch.rand(N, L, device=x.device)  # noise in [0, 1]
-
-        # sort noise for each sample
-        ids_shuffle = torch.argsort(noise, dim=1)  # ascend: small is keep, large is remove
-        ids_restore = torch.argsort(ids_shuffle, dim=1)
-
-        # keep the first subset
-        ids_keep = ids_shuffle[:, :len_keep]
-        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))
-
-        # generate the binary mask: 0 is keep, 1 is remove
-        mask = torch.ones([N, L], device=x.device)
-        mask[:, :len_keep] = 0
-        # unshuffle to get the binary mask
-        mask = torch.gather(mask, dim=1, index=ids_restore)
-
-        return x_masked, mask, ids_restore
-
-    def forward_encoder(self, x, mask_ratio):
-        # embed patches
-        x = self.patch_embed(x)
-
-        # add pos embed w/o cls token
-        x = x + self.pos_embed[:, 1:, :]
-
-        # masking: length -> length * mask_ratio
-        x, mask, ids_restore = self.random_masking(x, mask_ratio)
-
-        # append cls token
-        cls_token = self.cls_token + self.pos_embed[:, :1, :]
-        cls_tokens = cls_token.expand(x.shape[0], -1, -1)
-        x = torch.cat((cls_tokens, x), dim=1)
-
-        # apply Transformer blocks
-        for blk in self.blocks:
-            x = blk(x)
-        x = self.norm(x)
-
-        return x, mask, ids_restore
-
-    def forward_decoder(self, x, ids_restore):
-        # embed tokens
-        x = self.decoder_embed(x)
-
-        # append mask tokens to sequence
-        mask_tokens = self.mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)
-        x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # no cls token
-        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # unshuffle
-        x = torch.cat([x[:, :1, :], x_], dim=1)  # append cls token
-
-        # add pos embed
-        x = x + self.decoder_pos_embed
-
-        # apply Transformer blocks
-        for blk in self.decoder_blocks:
-            x = blk(x)
-        x = self.decoder_norm(x)
-
-        # predictor projection
-        x = self.decoder_pred(x)
-
-        # remove cls token
-        x = x[:, 1:, :]
-
+        x = x.reshape(
+            (x.shape[0], self.channels, self.config.model_config.num_players, self.config.data_config.num_frames)
+        )
         return x
 
-    def forward_loss(self, imgs, pred, mask):
-        """
-        imgs: [N, 3, H, W]
-        pred: [N, L, p*p*3]
-        mask: [N, L], 0 is keep, 1 is remove,
-        """
-        target = self.patchify(imgs)
-        if self.norm_pix_loss:
-            mean = target.mean(dim=-1, keepdim=True)
-            var = target.var(dim=-1, keepdim=True)
-            target = (target - mean) / (var + 1.0e-6) ** 0.5
+    def forward_loss(self, x, pred, mask):
+        # x:    (B, C, P, F)
+        # pred: (B, T, S)
+        # mask: (B, T) - 0=keep, 1=remove
+        target = self.patchify(x)
 
         loss = (pred - target) ** 2
-        loss = loss.mean(dim=-1)  # [N, L], mean loss per patch
+        loss = loss.mean(dim=-1)  # (B, T) - mean loss per patch
 
         loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
         return loss
 
-    def forward(self, imgs, mask_ratio=0.75):
-        latent, mask, ids_restore = self.forward_encoder(imgs, mask_ratio)
-        pred = self.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
-        loss = self.forward_loss(imgs, pred, mask)
+    def forward(self, x, mask_ratio=0.75):
+        x = x.permute(0, 3, 1, 2)
+        latent, mask, ids_restore = self.encoder(x, mask_ratio)
+        pred = self.decoder(latent, ids_restore)
+        loss = self.forward_loss(x, pred, mask)
         return loss, pred, mask
 
+    def training_step(self, batch: Tuple[torch.tensor, torch.tensor], batch_idx: int) -> float:
+        x = batch
+        loss, pred, mask = self.forward(x)
+        self.log("train_loss", loss, on_epoch=True, prog_bar=True, logger=True)
+        return loss
 
-class Attention(nn.Module):
-    fused_attn: Final[bool]
+    def validation_step(self, batch: Tuple[torch.tensor, torch.tensor], batch_idx: int) -> None:
+        x = batch
+        loss, pred, mask = self.forward(x)
+        self.log("val_loss", loss, on_epoch=True, prog_bar=True, logger=True)
+        return loss
 
-    def __init__(
-        self,
-        dim: int,
-        num_heads: int = 8,
-        qkv_bias: bool = False,
-        qk_norm: bool = False,
-        attn_drop: float = 0.0,
-        proj_drop: float = 0.0,
-        norm_layer: nn.Module = nn.LayerNorm,
-    ) -> None:
-        super().__init__()
-        assert dim % num_heads == 0, "dim should be divisible by num_heads"
-        self.num_heads = num_heads
-        self.head_dim = dim // num_heads
-        self.scale = self.head_dim**-0.5
-        self.fused_attn = True  # ???
-
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
-        self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv.unbind(0)
-        q, k = self.q_norm(q), self.k_norm(k)
-
-        if self.fused_attn:
-            x = F.scaled_dot_product_attention(
-                q,
-                k,
-                v,
-                dropout_p=self.attn_drop.p if self.training else 0.0,
-            )
-        else:
-            q = q * self.scale
-            attn = q @ k.transpose(-2, -1)
-            attn = attn.softmax(dim=-1)
-            attn = self.attn_drop(attn)
-            x = attn @ v
-
-        x = x.transpose(1, 2).reshape(B, N, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-
-class LayerScale(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        init_values: float = 1e-5,
-        inplace: bool = False,
-    ) -> None:
-        super().__init__()
-        self.inplace = inplace
-        self.gamma = nn.Parameter(init_values * torch.ones(dim))
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x.mul_(self.gamma) if self.inplace else x * self.gamma
-
-
-def drop_path(x, drop_prob: float = 0.0, training: bool = False, scale_by_keep: bool = True):
-    """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
-
-    This is the same as the DropConnect impl I created for EfficientNet, etc networks, however,
-    the original name is misleading as 'Drop Connect' is a different form of dropout in a separate paper...
-    See discussion: https://github.com/tensorflow/tpu/issues/494#issuecomment-532968956 ... I've opted for
-    changing the layer and argument names to 'drop path' rather than mix DropConnect as a layer name and use
-    'survival rate' as the argument.
-
-    """
-    if drop_prob == 0.0 or not training:
-        return x
-    keep_prob = 1 - drop_prob
-    shape = (x.shape[0],) + (1,) * (x.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
-    random_tensor = x.new_empty(shape).bernoulli_(keep_prob)
-    if keep_prob > 0.0 and scale_by_keep:
-        random_tensor.div_(keep_prob)
-    return x * random_tensor
-
-
-class DropPath(nn.Module):
-    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks)."""
-
-    def __init__(self, drop_prob: float = 0.0, scale_by_keep: bool = True):
-        super(DropPath, self).__init__()
-        self.drop_prob = drop_prob
-        self.scale_by_keep = scale_by_keep
-
-    def forward(self, x):
-        return drop_path(x, self.drop_prob, self.training, self.scale_by_keep)
-
-    def extra_repr(self):
-        return f"drop_prob={round(self.drop_prob,3):0.3f}"
-
-
-# From PyTorch internals
-def _ntuple(n):
-    def parse(x):
-        if isinstance(x, collections.abc.Iterable) and not isinstance(x, str):
-            return tuple(x)
-        return tuple(repeat(x, n))
-
-    return parse
-
-
-to_2tuple = _ntuple(2)
-
-
-class Mlp(nn.Module):
-    """MLP as used in Vision Transformer, MLP-Mixer and related networks"""
-
-    def __init__(
-        self,
-        in_features,
-        hidden_features=None,
-        out_features=None,
-        act_layer=nn.GELU,
-        norm_layer=None,
-        bias=True,
-        drop=0.0,
-        use_conv=False,
-    ):
-        super().__init__()
-        out_features = out_features or in_features
-        hidden_features = hidden_features or in_features
-        bias = to_2tuple(bias)
-        drop_probs = to_2tuple(drop)
-        linear_layer = partial(nn.Conv2d, kernel_size=1) if use_conv else nn.Linear
-
-        self.fc1 = linear_layer(in_features, hidden_features, bias=bias[0])
-        self.act = act_layer()
-        self.drop1 = nn.Dropout(drop_probs[0])
-        self.norm = norm_layer(hidden_features) if norm_layer is not None else nn.Identity()
-        self.fc2 = linear_layer(hidden_features, out_features, bias=bias[1])
-        self.drop2 = nn.Dropout(drop_probs[1])
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = self.act(x)
-        x = self.drop1(x)
-        x = self.norm(x)
-        x = self.fc2(x)
-        x = self.drop2(x)
-        return x
-
-
-class Block(nn.Module):
-    def __init__(
-        self,
-        dim: int,
-        num_heads: int,
-        mlp_ratio: float = 4.0,
-        qkv_bias: bool = False,
-        qk_norm: bool = False,
-        proj_drop: float = 0.0,
-        attn_drop: float = 0.0,
-        init_values: Optional[float] = None,
-        drop_path: float = 0.0,
-        act_layer: nn.Module = nn.GELU,
-        norm_layer: nn.Module = nn.LayerNorm,
-        mlp_layer: nn.Module = Mlp,
-    ) -> None:
-        super().__init__()
-        self.norm1 = norm_layer(dim)
-        self.attn = Attention(
-            dim,
-            num_heads=num_heads,
-            qkv_bias=qkv_bias,
-            qk_norm=qk_norm,
-            attn_drop=attn_drop,
-            proj_drop=proj_drop,
-            norm_layer=norm_layer,
-        )
-        self.ls1 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        self.drop_path1 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-
-        self.norm2 = norm_layer(dim)
-        self.mlp = mlp_layer(
-            in_features=dim,
-            hidden_features=int(dim * mlp_ratio),
-            act_layer=act_layer,
-            drop=proj_drop,
-        )
-        self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
-        self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x))))
-        x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
-        return x
-
-
-def get_2d_sincos_pos_embed(embed_dim, grid_size, cls_token=False):
-    """
-    grid_size: int of the grid height and width
-    return:
-    pos_embed: [grid_size*grid_size, embed_dim] or [1+grid_size*grid_size, embed_dim] (w/ or w/o cls_token)
-    """
-    grid_h = np.arange(grid_size, dtype=np.float32)
-    grid_w = np.arange(grid_size, dtype=np.float32)
-    grid = np.meshgrid(grid_w, grid_h)  # here w goes first
-    grid = np.stack(grid, axis=0)
-
-    grid = grid.reshape([2, 1, grid_size, grid_size])
-    pos_embed = get_2d_sincos_pos_embed_from_grid(embed_dim, grid)
-    if cls_token:
-        pos_embed = np.concatenate([np.zeros([1, embed_dim]), pos_embed], axis=0)
-    return pos_embed
-
-
-def get_2d_sincos_pos_embed_from_grid(embed_dim, grid):
-    assert embed_dim % 2 == 0
-
-    # use half of dimensions to encode grid_h
-    emb_h = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[0])  # (H*W, D/2)
-    emb_w = get_1d_sincos_pos_embed_from_grid(embed_dim // 2, grid[1])  # (H*W, D/2)
-
-    emb = np.concatenate([emb_h, emb_w], axis=1)  # (H*W, D)
-    return emb
-
-
-def get_1d_sincos_pos_embed_from_grid(embed_dim, pos):
-    """
-    embed_dim: output dimension for each position
-    pos: a list of positions to be encoded: size (M,)
-    out: (M, D)
-    """
-    assert embed_dim % 2 == 0
-    omega = np.arange(embed_dim // 2, dtype=np.float)
-    omega /= embed_dim / 2.0
-    omega = 1.0 / 10000**omega  # (D/2,)
-
-    pos = pos.reshape(-1)  # (M,)
-    out = np.einsum("m,d->md", pos, omega)  # (M, D/2), outer product
-
-    emb_sin = np.sin(out)  # (M, D/2)
-    emb_cos = np.cos(out)  # (M, D/2)
-
-    emb = np.concatenate([emb_sin, emb_cos], axis=1)  # (M, D)
-    return emb
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.config.model_config.learning_rate)
+        # scheduler = {
+        #     "scheduler": optim.lr_scheduler.OneCycleLR(
+        #         optimizer,
+        #         max_lr=self.config.learning_rate,
+        #         total_steps=self.config.epochs,
+        #     ),
+        # }
+        return optimizer  # , [scheduler]
