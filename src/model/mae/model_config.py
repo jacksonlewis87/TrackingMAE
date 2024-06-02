@@ -20,6 +20,7 @@ class ModelConfig:
     masking_strategy: str
     masking_ratio: float = None
     masking_indexes: list[int] = None
+    random_indexes: int = None
 
 
 @dataclass

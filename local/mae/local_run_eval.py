@@ -4,7 +4,7 @@ import torch
 from constants import ROOT_DIR
 from data.mae.data_config import DataConfig
 from data.mae.data_module import setup_data_module
-from loss.losses import get_loss
+from model.mae.masking import MaskingStrategy
 from model.mae.model import TrackingMaskedAutoEncoder
 from model.mae.model_config import FullConfig, ModelConfig
 from visualization.tracking import TrackingVisualization
@@ -19,10 +19,9 @@ def run_eval(config: FullConfig):
 
     with torch.no_grad():
         for batch in data_module.val_dataloader():
-            x = batch.permute(0, 3, 1, 2)
-            latent, mask, ids_restore = model.forward_encoder(x, 0.75)
-            pred = model.forward_decoder(latent, ids_restore)  # [N, L, p*p*3]
+            loss, pred, mask = model.forward(batch)
             # print(pred.size())
+            x = batch.permute(0, 3, 1, 2)
             print(x.size())
             print(pred.size())
             x_patched = model.patchify(x)
@@ -43,9 +42,13 @@ def run_eval(config: FullConfig):
 def do_work():
     experiment_name = "mae_v0"
 
-    checkpoint_version = 3
-    checkpoint_epoch = 59
-    checkpoint_step = 32280
+    checkpoint_version = 26
+    checkpoint_epoch = 359
+    checkpoint_step = 24480
+
+    checkpoint_version = 23
+    checkpoint_epoch = 209
+    checkpoint_step = 112980
 
     config = FullConfig(
         data_config=DataConfig(
@@ -55,14 +58,32 @@ def do_work():
             train_size=0.8,
             shuffle_players=True,
             num_frames=50,
+            include_z=False,
         ),
         model_config=ModelConfig(
             experiment_path=f"{ROOT_DIR}/data/training/{experiment_name}",
             learning_rate=0.0001,
             epochs=100,
             checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
+            num_players=11,
             num_sequence_patches=5,
             embedding_dimension=64,
+            encoder_depth=24,
+            num_encoder_heads=4,
+            decoder_embedding_dimension=512,
+            decoder_depth=8,
+            num_decoder_heads=16,
+            # num_sequence_patches=2,
+            # embedding_dimension=64,
+            # encoder_depth=12,
+            # num_encoder_heads=8,
+            # decoder_embedding_dimension=32,
+            # decoder_depth=4,
+            # num_decoder_heads=8,
+            masking_strategy=MaskingStrategy.INDEX.value,
+            # masking_indexes=[0, 1, 6],
+            # masking_indexes=[0],
+            random_indexes=1,
         ),
     )
 

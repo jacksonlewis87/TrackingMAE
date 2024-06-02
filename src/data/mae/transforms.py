@@ -40,7 +40,8 @@ def normalize_coordinates(x: torch.tensor) -> torch.tensor:
     # (P, T, C)
     x[:, :, 0] = normalize_tensor(x=x[:, :, 0], _min=X_MIN, _max=X_MAX)
     x[:, :, 1] = normalize_tensor(x=x[:, :, 1], _min=Y_MIN, _max=Y_MAX)
-    x[:, :, 2] = normalize_tensor(x=x[:, :, 2], _min=Z_MIN, _max=Z_MAX)
+    if x.size(dim=2) > 2:
+        x[:, :, 2] = normalize_tensor(x=x[:, :, 2], _min=Z_MIN, _max=Z_MAX)
 
     return x
 

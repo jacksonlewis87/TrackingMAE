@@ -17,6 +17,8 @@ class TrackingMaskedAutoEncoder(LightningModule):
         super().__init__()
         self.config = config
 
+        self.save_hyperparameters("config")
+
         if self.config.data_config.num_frames % self.config.model_config.num_sequence_patches > 0:
             print("Error: num_frames must be divisible by num_sequence_patches")
             raise Exception
@@ -30,11 +32,11 @@ class TrackingMaskedAutoEncoder(LightningModule):
         # L = patch length along temporal dimension (F / N) - set as patch_length below
         # S = patch size, flattened (L * C) - set as patch_size below
 
-        self.channels = 3
+        self.channels = 3 if self.config.data_config.include_z else 2
 
         self.total_patches = self.config.model_config.num_sequence_patches * self.config.model_config.num_players
         self.patch_length = int(self.config.data_config.num_frames / self.config.model_config.num_sequence_patches)
-        self.patch_size = self.patch_length * 3
+        self.patch_size = self.patch_length * self.channels
 
         masking_strategy = get_masking_strategy(
             masking_strategy=self.config.model_config.masking_strategy,
@@ -42,6 +44,7 @@ class TrackingMaskedAutoEncoder(LightningModule):
                 mask_ratio=self.config.model_config.masking_ratio,
                 indexes=self.config.model_config.masking_indexes,
                 patches_per_index=self.config.model_config.num_sequence_patches,
+                random_indexes=self.config.model_config.random_indexes,
             ),
         )
 
@@ -133,12 +136,13 @@ class TrackingMaskedAutoEncoder(LightningModule):
         loss = (pred - target) ** 2
         loss = loss.mean(dim=-1)  # (B, T) - mean loss per patch
 
-        loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
+        # loss = (loss * mask).sum() / mask.sum()  # mean loss on removed patches
+        loss = loss.mean()  # loss.sum()
         return loss
 
-    def forward(self, x, mask_ratio=0.75):
+    def forward(self, x):
         x = x.permute(0, 3, 1, 2)
-        latent, mask, ids_restore = self.encoder(x, mask_ratio)
+        latent, mask, ids_restore = self.encoder(x)
         pred = self.decoder(latent, ids_restore)
         loss = self.forward_loss(x, pred, mask)
         return loss, pred, mask

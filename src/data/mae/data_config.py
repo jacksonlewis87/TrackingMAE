@@ -9,3 +9,4 @@ class DataConfig:
     train_size: float
     shuffle_players: bool
     num_frames: int
+    include_z: bool

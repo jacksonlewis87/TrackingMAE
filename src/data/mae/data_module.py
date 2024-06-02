@@ -17,6 +17,8 @@ class MAEDataset(Dataset):
     def __getitem__(self, index: int):
         x = load_tensor(path=self.config.tensor_path, tensor_name=self.game_ids[index])
         x = random_crop(x=x, length=self.config.num_frames, dim=1)
+        if not self.config.include_z:
+            x = x[:, :, :2]
 
         if self.stage != "eval":
             x = shuffle_players(x=x, shuffle_players=self.config.shuffle_players)

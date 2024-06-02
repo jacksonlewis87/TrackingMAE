@@ -96,7 +96,7 @@ class MaskedEncoder2D(nn.Module):
     def get_norm(self):
         return nn.LayerNorm(self.embedding_dimension)
 
-    def forward(self, x, mask_ratio):
+    def forward(self, x):
         # embed patches
         x = self.patch_embed(x)
 
