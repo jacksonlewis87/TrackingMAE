@@ -1,12 +1,12 @@
 import torch
 import torch.nn as nn
-import torch.utils.checkpoint
 from pytorch_lightning import LightningModule
 from typing import Tuple
 
-from model.mae.blocks import Decoder2D, MaskedEncoder2D
+from model.mae.blocks import MaskedDecoder2D, MaskedEncoder2D
 from model.mae.masking import get_masking_strategy, MaskingConfig
 from model.mae.model_config import FullConfig
+from model.utils import patchify
 
 
 class TrackingMaskedAutoEncoder(LightningModule):
@@ -59,7 +59,7 @@ class TrackingMaskedAutoEncoder(LightningModule):
             masking_strategy=masking_strategy,
         )
 
-        self.decoder = Decoder2D(
+        self.decoder = MaskedDecoder2D(
             patch_size=self.patch_size,
             num_patches_x=self.config.model_config.num_players,
             num_patches_y=self.config.model_config.num_sequence_patches,
@@ -93,45 +93,18 @@ class TrackingMaskedAutoEncoder(LightningModule):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def patchify(self, x):
-        # (B, C, P, F) -> (B, T, S)
-        x = x.reshape(
-            shape=(
-                x.shape[0],
-                self.channels,
-                self.config.model_config.num_players,
-                1,
-                self.config.model_config.num_sequence_patches,
-                self.patch_length,
-            )
-        )
-        x = torch.einsum("nchpwq->nhwpqc", x)
-        x = x.reshape((x.shape[0], self.total_patches, self.patch_length * self.channels))
-        return x
-
-    def unpatchify(self, x):
-        # (B, T, S) -> (B, C, P, F)
-        x = x.reshape(
-            shape=(
-                x.shape[0],
-                self.config.model_config.num_players,
-                self.config.model_config.num_sequence_patches,
-                1,
-                self.patch_length,
-                self.channels,
-            )
-        )
-        x = torch.einsum("nhwpqc->nchpwq", x)
-        x = x.reshape(
-            (x.shape[0], self.channels, self.config.model_config.num_players, self.config.data_config.num_frames)
-        )
-        return x
-
     def forward_loss(self, x, pred, mask):
         # x:    (B, C, P, F)
         # pred: (B, T, S)
         # mask: (B, T) - 0=keep, 1=remove
-        target = self.patchify(x)
+        target = patchify(
+            x=x,
+            channels=self.channels,
+            num_players=self.config.model_config.num_players,
+            num_sequence_patches=self.config.model_config.num_sequence_patches,
+            patch_length=self.patch_length,
+            total_patches=self.total_patches,
+        )
 
         loss = (pred - target) ** 2
         loss = loss.mean(dim=-1)  # (B, T) - mean loss per patch
@@ -142,7 +115,7 @@ class TrackingMaskedAutoEncoder(LightningModule):
 
     def forward(self, x):
         x = x.permute(0, 3, 1, 2)
-        latent, mask, ids_restore = self.encoder(x)
+        latent, mask, ids_restore = self.encoder.masked_forward(x)
         pred = self.decoder(latent, ids_restore)
         loss = self.forward_loss(x, pred, mask)
         return loss, pred, mask

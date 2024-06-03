@@ -2,21 +2,26 @@ from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 from typing import Optional
 
-from data.mae.data_config import DataConfig
+from data.decoding.data_config import DataConfig
+from data.decoding.transforms import get_tracking_to_label_function
 from data.transforms import random_crop, shuffle_players, normalize_coordinates
 from data.utils import get_data_split
 from utils import list_files_in_directory, load_tensor
 
 
-class MAEDataset(Dataset):
+class DecodingDataset(Dataset):
     def __init__(self, config: DataConfig, game_ids: list[str], stage: str = "train") -> None:
         self.config = config
         self.game_ids = game_ids
         self.stage = stage
+        self.tracking_to_label_function = get_tracking_to_label_function(task_str=self.config.task)
 
     def __getitem__(self, index: int):
         x = load_tensor(path=self.config.tensor_path, tensor_name=self.game_ids[index])
         x = random_crop(x=x, length=self.config.num_frames, dim=1)
+
+        y = self.tracking_to_label_function(x=x, config=self.config)
+
         if not self.config.include_z:
             x = x[:, :, :2]
 
@@ -25,13 +30,13 @@ class MAEDataset(Dataset):
 
         x = normalize_coordinates(x=x)
 
-        return x
+        return x, y
 
     def __len__(self) -> int:
         return len(self.game_ids)
 
 
-class MAEDataModule(LightningDataModule):
+class DecodingDataModule(LightningDataModule):
     def __init__(self, config: DataConfig, stage: str = None) -> None:
         super().__init__()
         self.config = config
@@ -49,11 +54,11 @@ class MAEDataModule(LightningDataModule):
             stage=stage,
         )
 
-        self.train_dataset = MAEDataset(
+        self.train_dataset = DecodingDataset(
             config=self.config,
             game_ids=data_split["train"],
         )
-        self.val_dataset = MAEDataset(
+        self.val_dataset = DecodingDataset(
             config=self.config,
             game_ids=data_split["val"],
             stage="eval",
@@ -67,4 +72,4 @@ class MAEDataModule(LightningDataModule):
 
 
 def setup_data_module(config: DataConfig, stage: str = None):
-    return MAEDataModule(config=config, stage=stage)
+    return DecodingDataModule(config=config, stage=stage)

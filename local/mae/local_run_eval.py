@@ -7,6 +7,7 @@ from data.mae.data_module import setup_data_module
 from model.mae.masking import MaskingStrategy
 from model.mae.model import TrackingMaskedAutoEncoder
 from model.mae.model_config import FullConfig, ModelConfig
+from model.utils import patchify, unpatchify
 from visualization.tracking import TrackingVisualization
 
 
@@ -24,12 +25,33 @@ def run_eval(config: FullConfig):
             x = batch.permute(0, 3, 1, 2)
             print(x.size())
             print(pred.size())
-            x_patched = model.patchify(x)
-            x_unpatched = model.unpatchify(x_patched)
+            x_patched = patchify(
+                x=x,
+                channels=model.channels,
+                num_players=model.config.model_config.num_players,
+                num_sequence_patches=model.config.model_config.num_sequence_patches,
+                patch_length=model.patch_length,
+                total_patches=model.total_patches,
+            )
+            x_unpatched = unpatchify(
+                x=x_patched,
+                channels=model.channels,
+                num_players=model.config.model_config.num_players,
+                num_sequence_patches=model.config.model_config.num_sequence_patches,
+                patch_length=model.patch_length,
+                num_frames=model.config.data_config.num_frames,
+            )
             print(x_unpatched.size())
             print(torch.all(torch.eq(x, x_unpatched)))
             x = x.permute(0, 2, 3, 1)
-            pred = model.unpatchify(pred).permute(0, 2, 3, 1)
+            pred = unpatchify(
+                x=pred,
+                channels=model.channels,
+                num_players=model.config.model_config.num_players,
+                num_sequence_patches=model.config.model_config.num_sequence_patches,
+                patch_length=model.patch_length,
+                num_frames=model.config.data_config.num_frames,
+            ).permute(0, 2, 3, 1)
             for i in range(batch.size(dim=0)):
                 print("x")
                 tv = TrackingVisualization.from_tensor(tracking_tensor=x[i])

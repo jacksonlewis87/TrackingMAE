@@ -50,7 +50,6 @@ class IndexMasking(torch.nn.Module):
         # cherry-pick certain indexes
         if self.config.random_indexes > 0:
             for bi in range(B):
-                print(indexes[bi])
                 for index in indexes[bi]:
                     for i in range(self.config.patches_per_index):
                         noise[bi, (index * self.config.patches_per_index) + i] = 2
