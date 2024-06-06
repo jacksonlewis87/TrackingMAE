@@ -4,7 +4,7 @@ from typing import Optional
 
 from data.decoding.data_config import DataConfig
 from data.decoding.transforms import get_tracking_to_label_function
-from data.transforms import random_crop, shuffle_players, normalize_coordinates
+from data.transforms import random_crop, shuffle_players, normalize_coordinates, flip_x_axis
 from data.utils import get_data_split
 from utils import list_files_in_directory, load_tensor
 
@@ -19,6 +19,7 @@ class DecodingDataset(Dataset):
     def __getitem__(self, index: int):
         x = load_tensor(path=self.config.tensor_path, tensor_name=self.game_ids[index])
         x = random_crop(x=x, length=self.config.num_frames, dim=1)
+        x = flip_x_axis(x=x)
 
         y = self.tracking_to_label_function(x=x, config=self.config)
 

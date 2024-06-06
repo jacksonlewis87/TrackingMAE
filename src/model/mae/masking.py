@@ -43,7 +43,7 @@ class IndexMasking(torch.nn.Module):
         noise = torch.rand(B, L)  # noise in [0, 1]
 
         if self.config.random_indexes is not None:
-            indexes = torch.randint(0, 11, [B, self.num_random_indexes])
+            indexes = torch.stack([torch.randperm(11)[: self.num_random_indexes] for _ in range(B)], dim=0)
         else:
             indexes = self.config.indexes
 

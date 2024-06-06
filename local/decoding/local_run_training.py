@@ -9,9 +9,9 @@ from model.decoding.model_config import FullConfig, ModelConfig
 def do_work():
     experiment_name = "decoding_v0"
 
-    checkpoint_version = 25
-    checkpoint_epoch = 179
-    checkpoint_step = 12240
+    checkpoint_version = 2
+    checkpoint_epoch = 59
+    checkpoint_step = 2040
 
     config = FullConfig(
         data_config=DataConfig(
@@ -28,11 +28,11 @@ def do_work():
         model_config=ModelConfig(
             experiment_path=f"{ROOT_DIR}/data/training/{experiment_name}",
             learning_rate=0.0001,
-            epochs=60,
-            checkpoint_path=None,
-            # checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
-            encoder_checkpoint_path=f"{ROOT_DIR}/data/training/mae_v0/lightning_logs/version_26/checkpoints/epoch=359-step=24480.ckpt",
-            encoder_checkpoint_config_path=f"{ROOT_DIR}/data/training/mae_v0/lightning_logs/version_26/hparams.yaml",
+            epochs=120,
+            # checkpoint_path=None,
+            checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
+            encoder_checkpoint_path=f"{ROOT_DIR}/data/training/mae_v0/lightning_logs/version_23/checkpoints/epoch=209-step=112980.ckpt",
+            encoder_checkpoint_config_path=f"{ROOT_DIR}/data/training/mae_v0/lightning_logs/version_23/hparams.yaml",
             freeze_encoder=True,
             loss=Loss.BCE.value,
             decoder_embedding_dimension=32,

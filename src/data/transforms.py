@@ -48,3 +48,10 @@ def normalize_coordinates(x: torch.tensor) -> torch.tensor:
 
 def normalize_tensor(x: torch.tensor, _min, _max) -> torch.tensor:
     return (2 * (x - _min) / (_max - _min)) - 1
+
+
+def flip_x_axis(x: torch.tensor) -> torch.tensor:
+    if torch.rand() >= 0.5:
+        x[:, 0] = X_MAX - x[:, 0]
+
+    return x

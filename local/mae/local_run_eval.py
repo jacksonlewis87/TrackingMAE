@@ -8,7 +8,16 @@ from model.mae.masking import MaskingStrategy
 from model.mae.model import TrackingMaskedAutoEncoder
 from model.mae.model_config import FullConfig, ModelConfig
 from model.utils import patchify, unpatchify
-from visualization.tracking import TrackingVisualization
+from visualization.tracking import TrackingVisualization, DualTrackingVisualization
+
+
+def mask_to_masked_player_indexes(config: FullConfig, mask: torch.tensor) -> list[int]:
+    indexes = mask.nonzero().squeeze(1).tolist()
+    masked_indexes = []
+    for i in range(11):
+        if i * config.model_config.num_sequence_patches in indexes:
+            masked_indexes += [i]
+    return masked_indexes
 
 
 def run_eval(config: FullConfig):
@@ -21,10 +30,7 @@ def run_eval(config: FullConfig):
     with torch.no_grad():
         for batch in data_module.val_dataloader():
             loss, pred, mask = model.forward(batch)
-            # print(pred.size())
             x = batch.permute(0, 3, 1, 2)
-            print(x.size())
-            print(pred.size())
             x_patched = patchify(
                 x=x,
                 channels=model.channels,
@@ -41,8 +47,6 @@ def run_eval(config: FullConfig):
                 patch_length=model.patch_length,
                 num_frames=model.config.data_config.num_frames,
             )
-            print(x_unpatched.size())
-            print(torch.all(torch.eq(x, x_unpatched)))
             x = x.permute(0, 2, 3, 1)
             pred = unpatchify(
                 x=pred,
@@ -53,11 +57,10 @@ def run_eval(config: FullConfig):
                 num_frames=model.config.data_config.num_frames,
             ).permute(0, 2, 3, 1)
             for i in range(batch.size(dim=0)):
-                print("x")
-                tv = TrackingVisualization.from_tensor(tracking_tensor=x[i])
-                tv.execute()
-                print("pred")
-                tv = TrackingVisualization.from_tensor(tracking_tensor=pred[i])
+                masked_indexes = mask_to_masked_player_indexes(config=config, mask=mask[i])
+                tv = DualTrackingVisualization.from_tensor(
+                    tracking_tensor_0=x[i], tracking_tensor_1=pred[i], masked_indexes=masked_indexes
+                )
                 tv.execute()
 
 
