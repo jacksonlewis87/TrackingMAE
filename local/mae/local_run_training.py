@@ -6,7 +6,7 @@ from model.mae.model_config import FullConfig, ModelConfig
 
 
 def do_work():
-    experiment_name = "mae_v0"
+    experiment_name = "mae_v1"
 
     checkpoint_version = 25
     checkpoint_epoch = 179
@@ -14,7 +14,7 @@ def do_work():
 
     config = FullConfig(
         data_config=DataConfig(
-            tensor_path=f"{ROOT_DIR}/data/tensors",
+            tensor_path=f"{ROOT_DIR}/data/tensors/split_events",
             data_split_path=f"{ROOT_DIR}/data/training/{experiment_name}/data_split.json",
             batch_size=64,
             train_size=0.8,
@@ -26,14 +26,14 @@ def do_work():
             experiment_path=f"{ROOT_DIR}/data/training/{experiment_name}",
             learning_rate=0.0001,
             epochs=360,
-            # checkpoint_path=None,
-            checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
+            checkpoint_path=None,
+            # checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
             num_players=11,
-            num_sequence_patches=2,
-            embedding_dimension=64,
+            num_sequence_patches=5,
+            embedding_dimension=256,
             encoder_depth=12,
-            num_encoder_heads=8,
-            decoder_embedding_dimension=32,
+            num_encoder_heads=16,
+            decoder_embedding_dimension=128,
             decoder_depth=4,
             num_decoder_heads=8,
             masking_strategy=MaskingStrategy.INDEX.value,

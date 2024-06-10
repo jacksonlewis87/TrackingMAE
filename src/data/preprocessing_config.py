@@ -8,3 +8,4 @@ class PreprocessingConfig:
     event_duration: int
     target_frame_rate: int
     training_frame_rate: int
+    split_long_events: bool = True

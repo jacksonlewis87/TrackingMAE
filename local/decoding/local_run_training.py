@@ -7,7 +7,7 @@ from model.decoding.model_config import FullConfig, ModelConfig
 
 
 def do_work():
-    experiment_name = "decoding_v0"
+    experiment_name = "decoding_v1"
 
     checkpoint_version = 2
     checkpoint_epoch = 59
@@ -15,22 +15,25 @@ def do_work():
 
     config = FullConfig(
         data_config=DataConfig(
-            tensor_path=f"{ROOT_DIR}/data/tensors",
+            tensor_path=f"{ROOT_DIR}/data/tensors/full_events",
             data_split_path=f"{ROOT_DIR}/data/training/{experiment_name}/data_split.json",
             batch_size=128,
             train_size=0.8,
             shuffle_players=True,
             num_frames=50,
             include_z=False,
-            task=Task.BALL_HEIGHT_CLASSIFICATION.value,
-            min_z=10.0,
+            task=Task.MADE_BASKET_CLASSIFICATION.value,
+            num_event_classification_tasks=2,
+            y_frames=10,
+            min_frames=30,
+            patch_length=10,
         ),
         model_config=ModelConfig(
             experiment_path=f"{ROOT_DIR}/data/training/{experiment_name}",
-            learning_rate=0.0001,
+            learning_rate=0.00001,
             epochs=120,
-            # checkpoint_path=None,
-            checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
+            checkpoint_path=None,
+            # checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
             encoder_checkpoint_path=f"{ROOT_DIR}/data/training/mae_v0/lightning_logs/version_23/checkpoints/epoch=209-step=112980.ckpt",
             encoder_checkpoint_config_path=f"{ROOT_DIR}/data/training/mae_v0/lightning_logs/version_23/hparams.yaml",
             freeze_encoder=True,

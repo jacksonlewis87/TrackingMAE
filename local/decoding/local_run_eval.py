@@ -2,11 +2,12 @@ import os
 import torch
 
 from constants import ROOT_DIR
-from data.mae.data_config import DataConfig
-from data.mae.data_module import setup_data_module
-from model.mae.masking import MaskingStrategy
-from model.mae.model import TrackingMaskedAutoEncoder
-from model.mae.model_config import FullConfig, ModelConfig
+from data.decoding.data_config import DataConfig
+from data.decoding.data_module import setup_data_module
+from data.decoding.transforms import Task
+from loss.losses import Loss
+from model.decoding.model import TrackingMaskedAutoEncoder
+from model.decoding.model_config import FullConfig, ModelConfig
 from model.utils import patchify, unpatchify
 from visualization.tracking import TrackingVisualization, DualTrackingVisualization
 
@@ -24,6 +25,24 @@ def run_eval(config: FullConfig):
     os.makedirs(config.model_config.experiment_path, exist_ok=True)
 
     data_module = setup_data_module(config=config.data_config)
+
+    count_y = 0
+    count = 0
+    for batch in data_module.val_dataloader():
+        x, y = batch
+        # print(y)
+        if y[0][0] == 1 or y[0][1] == 1:
+            count_y += 1
+        count += 1
+    print(count_y)
+    print(count)
+    # if y[0][0] == 1:
+    #     tv = TrackingVisualization.from_tensor(
+    #         tracking_tensor=x[0]
+    #     )
+    #     tv.execute()
+    print(asdfasd)
+
     model = TrackingMaskedAutoEncoder.load_from_checkpoint(config.model_config.checkpoint_path, config=config)
     model.eval()
 
@@ -65,39 +84,40 @@ def run_eval(config: FullConfig):
 
 
 def do_work():
-    experiment_name = "mae_v1"
+    experiment_name = "decoding_v1"
 
-    checkpoint_version = 0
-    checkpoint_epoch = 65
-    checkpoint_step = 31812
+    checkpoint_version = 1
+    checkpoint_epoch = 25
+    checkpoint_step = 468
 
     config = FullConfig(
         data_config=DataConfig(
-            tensor_path=f"{ROOT_DIR}/data/tensors/split_events",
+            tensor_path=f"{ROOT_DIR}/data/tensors/full_events",
             data_split_path=f"{ROOT_DIR}/data/training/{experiment_name}/data_split.json",
-            batch_size=8,
+            batch_size=1,
             train_size=0.8,
             shuffle_players=True,
             num_frames=50,
             include_z=False,
+            task=Task.MADE_BASKET_CLASSIFICATION.value,
+            num_event_classification_tasks=2,
+            y_frames=15,
+            min_frames=35,
+            patch_length=10,
         ),
         model_config=ModelConfig(
             experiment_path=f"{ROOT_DIR}/data/training/{experiment_name}",
             learning_rate=0.0001,
-            epochs=100,
-            checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
-            num_players=11,
-            num_sequence_patches=5,
-            embedding_dimension=256,
-            encoder_depth=12,
-            num_encoder_heads=16,
-            decoder_embedding_dimension=128,
+            epochs=120,
+            checkpoint_path=None,
+            # checkpoint_path=f"{ROOT_DIR}/data/training/{experiment_name}/lightning_logs/version_{checkpoint_version}/checkpoints/epoch={checkpoint_epoch}-step={checkpoint_step}.ckpt",
+            encoder_checkpoint_path=f"{ROOT_DIR}/data/training/mae_v0/lightning_logs/version_23/checkpoints/epoch=209-step=112980.ckpt",
+            encoder_checkpoint_config_path=f"{ROOT_DIR}/data/training/mae_v0/lightning_logs/version_23/hparams.yaml",
+            freeze_encoder=True,
+            loss=Loss.BCE.value,
+            decoder_embedding_dimension=32,
             decoder_depth=4,
             num_decoder_heads=8,
-            masking_strategy=MaskingStrategy.INDEX.value,
-            # masking_indexes=[0, 1, 6],
-            # masking_indexes=[0],
-            random_indexes=1,
         ),
     )
 

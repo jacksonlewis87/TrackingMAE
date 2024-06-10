@@ -51,7 +51,7 @@ def normalize_tensor(x: torch.tensor, _min, _max) -> torch.tensor:
 
 
 def flip_x_axis(x: torch.tensor) -> torch.tensor:
-    if torch.rand() >= 0.5:
+    if torch.rand(1) >= 0.5:
         x[:, 0] = X_MAX - x[:, 0]
 
     return x

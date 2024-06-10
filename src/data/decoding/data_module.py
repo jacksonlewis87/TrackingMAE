@@ -3,8 +3,7 @@ from torch.utils.data import DataLoader, Dataset
 from typing import Optional
 
 from data.decoding.data_config import DataConfig
-from data.decoding.transforms import get_tracking_to_label_function
-from data.transforms import random_crop, shuffle_players, normalize_coordinates, flip_x_axis
+from data.decoding.transforms import get_tracking_transforms_function
 from data.utils import get_data_split
 from utils import list_files_in_directory, load_tensor
 
@@ -14,23 +13,11 @@ class DecodingDataset(Dataset):
         self.config = config
         self.game_ids = game_ids
         self.stage = stage
-        self.tracking_to_label_function = get_tracking_to_label_function(task_str=self.config.task)
+        self.tracking_transforms_function = get_tracking_transforms_function(task_str=self.config.task)
 
     def __getitem__(self, index: int):
         x = load_tensor(path=self.config.tensor_path, tensor_name=self.game_ids[index])
-        x = random_crop(x=x, length=self.config.num_frames, dim=1)
-        x = flip_x_axis(x=x)
-
-        y = self.tracking_to_label_function(x=x, config=self.config)
-
-        if not self.config.include_z:
-            x = x[:, :, :2]
-
-        if self.stage != "eval":
-            x = shuffle_players(x=x, shuffle_players=self.config.shuffle_players)
-
-        x = normalize_coordinates(x=x)
-
+        x, y = self.tracking_transforms_function(x=x, config=self.config, stage=self.stage)
         return x, y
 
     def __len__(self) -> int:

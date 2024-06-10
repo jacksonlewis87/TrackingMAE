@@ -21,8 +21,8 @@ class BCELoss(torch.nn.Module):
         super(BCELoss, self).__init__()
 
     def forward(self, output, labels):
-        loss = labels * torch.log(output + 1e-7) + (1 - labels) * torch.log(1 - output + 1e-7)
-        return -torch.mean(loss)
+        loss = 20 * labels * torch.log(output + 1e-7) + (1 - labels) * torch.log(1 - output + 1e-7)
+        return -torch.mean(torch.sum(loss, dim=1))
 
 
 def get_loss(loss: str):

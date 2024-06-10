@@ -3,7 +3,7 @@ from torch.utils.data import DataLoader, Dataset
 from typing import Optional
 
 from data.mae.data_config import DataConfig
-from data.transforms import random_crop, shuffle_players, normalize_coordinates
+from data.transforms import random_crop, shuffle_players, normalize_coordinates, flip_x_axis
 from data.utils import get_data_split
 from utils import list_files_in_directory, load_tensor
 
@@ -22,6 +22,7 @@ class MAEDataset(Dataset):
 
         if self.stage != "eval":
             x = shuffle_players(x=x, shuffle_players=self.config.shuffle_players)
+            x = flip_x_axis(x=x)
 
         x = normalize_coordinates(x=x)
 

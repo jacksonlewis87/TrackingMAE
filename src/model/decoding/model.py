@@ -4,6 +4,7 @@ from pytorch_lightning import LightningModule
 from torch import nn
 from typing import Tuple
 
+from data.decoding.transforms import Task
 from loss.losses import get_loss
 from model.decoding.blocks import Decoder
 from model.decoding.model_config import FullConfig
@@ -52,6 +53,14 @@ class TrackingDecoder(LightningModule):
         return encoder, mae_config
 
     def get_proj_head(self):
+        if self.config.data_config.task == Task.BALL_HEIGHT_CLASSIFICATION.value:
+            return self.get_temporal_classification_proj_head()
+        elif self.config.data_config.task == Task.MADE_BASKET_CLASSIFICATION.value:
+            return self.get_event_classification_proj_head()
+        else:
+            return None
+
+    def get_temporal_classification_proj_head(self):
         head = nn.ModuleList()
         head.add_module("flatten", nn.Flatten())
         head.add_module(
@@ -69,8 +78,26 @@ class TrackingDecoder(LightningModule):
                 bias=True,
             ),
         )
-        head.add_module("softmax", nn.Sigmoid())
+        head.add_module("sigmoid", nn.Sigmoid())
         return head
+
+    def get_event_classification_proj_head(self):
+        head = nn.ModuleList()
+        head.add_module(
+            "linear_0",
+            nn.Linear(
+                self.config.model_config.decoder_embedding_dimension,
+                self.config.data_config.num_event_classification_tasks,
+                bias=True,
+            ),
+        )
+        head.add_module("sigmoid", nn.Sigmoid())
+        return head
+
+    def post_process_decoder(self, x: torch.tensor):
+        if self.config.data_config.task == Task.MADE_BASKET_CLASSIFICATION.value:
+            x = x[:, 0]  # only use class token
+        return x
 
     def forward_loss(self, output, labels):
         return self.loss(output, labels)
@@ -79,6 +106,7 @@ class TrackingDecoder(LightningModule):
         x = x.permute(0, 3, 1, 2)
         pred = self.encoder(x)
         pred = self.decoder(pred)
+        pred = self.post_process_decoder(pred)
         for module in self.proj_head:
             pred = module(pred)
         return pred

@@ -177,17 +177,21 @@ def get_player_coordinates_tensor_from_frames(player_id: int, frames: list[Frame
 def convert_event_to_tensors(events: list[Event]):
     tensors = {}
     for event in events:
-        file_name = f"{event.game_id}_{event.event_id}"
+        try:
+            file_name = f"{event.game_id}_{event.event_id}"
 
-        list_of_tensors = [get_player_coordinates_tensor_from_frames(player_id=-1, frames=event.frames)]
+            list_of_tensors = [get_player_coordinates_tensor_from_frames(player_id=-1, frames=event.frames)]
 
-        for player_id in event.team_0_players:
-            list_of_tensors += [get_player_coordinates_tensor_from_frames(player_id=player_id, frames=event.frames)]
+            for player_id in event.team_0_players:
+                list_of_tensors += [get_player_coordinates_tensor_from_frames(player_id=player_id, frames=event.frames)]
 
-        for player_id in event.team_1_players:
-            list_of_tensors += [get_player_coordinates_tensor_from_frames(player_id=player_id, frames=event.frames)]
+            for player_id in event.team_1_players:
+                list_of_tensors += [get_player_coordinates_tensor_from_frames(player_id=player_id, frames=event.frames)]
 
-        tensors[file_name] = torch.stack(list_of_tensors, dim=0)
+            tensors[file_name] = torch.stack(list_of_tensors, dim=0)
+        except Exception as e:
+            print(f"Error: {file_name}")
+            print(e)
 
     return tensors
 
@@ -204,7 +208,8 @@ def preprocess_tracking_data(config: PreprocessingConfig):
             target_frame_rate=config.target_frame_rate,
             training_frame_rate=config.training_frame_rate,
         )
-        events = split_long_events(events=events, duration=config.event_duration * config.training_frame_rate)
+        if config.split_long_events:
+            events = split_long_events(events=events, duration=config.event_duration * config.training_frame_rate)
 
         tensors = convert_event_to_tensors(events=events)
 
