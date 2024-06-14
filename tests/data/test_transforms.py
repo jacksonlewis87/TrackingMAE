@@ -3,7 +3,7 @@ import torch
 from unittest.mock import call, patch
 
 from constants import X_MIN, X_MAX, Y_MIN, Y_MAX, Z_MIN, Z_MAX
-from data.mae.transforms import (
+from data.transforms import (
     random_crop,
     shuffle_players,
     shuffle_tensor_dim,
@@ -30,7 +30,7 @@ def test_random_crop(size, dim, expected_return_size):
     assert result.size() == expected_return_size
 
 
-@patch("data.mae.transforms.shuffle_tensor_dim")
+@patch("data.transforms.shuffle_tensor_dim")
 def test_shuffle_players(mock_shuffle_tensor_dim):
     ball = [torch.zeros(3)]
     team_0 = [torch.tensor([1, 1, 1]) for _ in range(5)]
