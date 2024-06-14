@@ -26,7 +26,6 @@ def create_data_split(config: DataConfig, game_ids: list[str]):
         raise Exception
 
     shuffle(game_ids)
-    print(game_ids)
     data_split = {
         "train": game_ids[: round(len(game_ids) * config.train_size)],
         "val": game_ids[round(len(game_ids) * config.train_size) :],

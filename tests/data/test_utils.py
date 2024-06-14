@@ -59,6 +59,18 @@ def test_create_data_split(mock_write_json, mock_shuffle, mock_get_non_eval_game
     assert result == expected_result
 
 
+@patch("data.utils.get_non_eval_game_ids")
+@patch("data.utils.shuffle")
+@patch("data.utils.write_json")
+def test_create_data_split_error(mock_write_json, mock_shuffle, mock_get_non_eval_game_ids):
+    mock_config = create_autospec(DataConfig)
+    mock_game_ids = ["mock_game_id"]
+    mock_get_non_eval_game_ids.return_value = ["id_0", "id_0", "id_2", "id_3"]
+
+    with pytest.raises(Exception):
+        result = create_data_split(config=mock_config, game_ids=mock_game_ids)
+
+
 def test_get_non_eval_game_ids():
     game_ids = [EVAL_GAME_IDS[0], "non_eval_game_id"]
 
