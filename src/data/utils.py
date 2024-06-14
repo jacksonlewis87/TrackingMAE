@@ -19,13 +19,14 @@ def get_data_split(config: DataConfig, game_ids: list[str], stage: str):
 
 
 def create_data_split(config: DataConfig, game_ids: list[str]):
-    game_ids = [game_id for game_id in game_ids if game_ids not in EVAL_GAME_IDS]
+    game_ids = get_non_eval_game_ids(game_ids=game_ids)
 
     if len(list(set(game_ids))) != len(game_ids):
         print("Error: duplicate game_ids")
         raise Exception
 
     shuffle(game_ids)
+    print(game_ids)
     data_split = {
         "train": game_ids[: round(len(game_ids) * config.train_size)],
         "val": game_ids[round(len(game_ids) * config.train_size) :],
@@ -35,6 +36,11 @@ def create_data_split(config: DataConfig, game_ids: list[str]):
     return data_split
 
 
+def get_non_eval_game_ids(game_ids: list[str]):
+    game_ids = [game_id for game_id in game_ids if game_id not in EVAL_GAME_IDS]
+    return game_ids
+
+
 def get_eval_game_ids(game_ids: list[str]):
-    game_ids = [game_id for game_id in game_ids if game_ids in EVAL_GAME_IDS]
+    game_ids = [game_id for game_id in game_ids if game_id in EVAL_GAME_IDS]
     return game_ids
