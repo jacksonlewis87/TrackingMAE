@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from typing import Optional
 
 from model.blocks import TransformerBlock, get_2d_pos_encoding
 
@@ -112,7 +113,7 @@ class MaskedEncoder2D(nn.Module):
 
         return x, mask, ids_restore
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor, return_attention: bool = False) -> (torch.Tensor, Optional[list]):
         # embed patches
         x = self.patch_embed(x)
 
@@ -124,12 +125,21 @@ class MaskedEncoder2D(nn.Module):
         class_tokens = class_token.expand(x.shape[0], -1, -1)
         x = torch.cat((class_tokens, x), dim=1)
 
+        attention_outputs = []
+
         # apply Transformer blocks
         for transformer_block in self.transformer_blocks:
-            x = transformer_block(x)
+            if return_attention:
+                x, attention_output = transformer_block.forward(x=x, return_attention=return_attention)
+                attention_outputs += [attention_output]
+            else:
+                x = transformer_block(x)
         x = self.norm(x)
 
-        return x
+        if return_attention:
+            return x, attention_outputs
+        else:
+            return x
 
 
 class MaskedDecoder2D(nn.Module):
@@ -199,7 +209,7 @@ class MaskedDecoder2D(nn.Module):
     def get_decoder_pred(self):
         return nn.Linear(self.decoder_embedding_dimension, self.patch_size, bias=True)
 
-    def forward(self, x, ids_restore):
+    def masked_forward(self, x, ids_restore):
         # embed tokens
         x = self.decoder_embed(x)
 
@@ -224,3 +234,32 @@ class MaskedDecoder2D(nn.Module):
         x = x[:, 1:, :]
 
         return x
+
+    def forward(self, x: torch.Tensor, return_attention: bool = False) -> (torch.Tensor, Optional[list]):
+        # embed tokens
+        x = self.decoder_embed(x)
+
+        # add pos embed
+        x = x + self.pos_encoding
+
+        attention_outputs = []
+
+        # apply Transformer blocks
+        for transformer_block in self.transformer_blocks:
+            if return_attention:
+                x, attention_output = transformer_block.forward(x=x, return_attention=return_attention)
+                attention_outputs += [attention_output]
+            else:
+                x = transformer_block(x)
+        x = self.norm(x)
+
+        # predictor projection
+        x = self.decoder_pred(x)
+
+        # remove cls token
+        x = x[:, 1:, :]
+
+        if return_attention:
+            return x, attention_outputs
+        else:
+            return x

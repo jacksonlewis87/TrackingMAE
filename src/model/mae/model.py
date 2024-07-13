@@ -120,6 +120,12 @@ class TrackingMaskedAutoEncoder(LightningModule):
         loss = self.forward_loss(x, pred, mask)
         return loss, pred, mask
 
+    def forward_return_attention(self, x):
+        x = x.permute(0, 3, 1, 2)
+        latent, encoder_attention = self.encoder.forward(x=x, return_attention=True)
+        pred, decoder_attention = self.decoder.forward(x=latent, return_attention=True)
+        return latent, pred, encoder_attention, decoder_attention
+
     def training_step(self, batch: Tuple[torch.tensor, torch.tensor], batch_idx: int) -> float:
         x = batch
         loss, pred, mask = self.forward(x)

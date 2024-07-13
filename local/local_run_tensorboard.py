@@ -9,7 +9,8 @@ if __name__ == "__main__":
     # experiment_name = "decoding_v1"
 
     tb = program.TensorBoard()
-    tb.configure(argv=[None, "--logdir", f"{ROOT_DIR}\\data\\training\\{experiment_name}"])
+    # tb.configure(argv=[None, "--logdir", f"{ROOT_DIR}\\data\\training\\{experiment_name}"])
+    tb.configure(argv=[None, "--logdir", f"{ROOT_DIR}\\data\\training"])
     url = tb.launch()
     print(f"Tensorflow listening on {url}")
     time.sleep(10000)

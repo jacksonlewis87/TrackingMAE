@@ -27,7 +27,7 @@ class Attention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
         self.scale = self.head_dim**-0.5
-        self.fused_attn = True  # ???
+        self.fused_attn = False  # ???
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
@@ -36,7 +36,7 @@ class Attention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor) -> (torch.Tensor, torch.Tensor):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
         q, k, v = qkv.unbind(0)
@@ -49,6 +49,7 @@ class Attention(nn.Module):
                 v,
                 dropout_p=self.attn_drop.p if self.training else 0.0,
             )
+            attn = x
         else:
             q = q * self.scale
             attn = q @ k.transpose(-2, -1)
@@ -59,7 +60,7 @@ class Attention(nn.Module):
         x = x.transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-        return x
+        return x, attn
 
 
 class LayerScale(nn.Module):
@@ -203,10 +204,14 @@ class TransformerBlock(nn.Module):
         self.ls2 = LayerScale(dim, init_values=init_values) if init_values else nn.Identity()
         self.drop_path2 = DropPath(drop_path) if drop_path > 0.0 else nn.Identity()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x))))
+    def forward(self, x: torch.Tensor, return_attention: bool = False) -> (torch.Tensor, Optional[torch.tensor]):
+        attention_output, attention_value = self.attn(self.norm1(x))
+        x = x + self.drop_path1(self.ls1(attention_output))
         x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
-        return x
+        if return_attention:
+            return x, attention_value
+        else:
+            return x
 
 
 def get_2d_pos_encoding(embedding_dimension: int, num_patches_x: int, num_patches_y: int, cls_token=False):
