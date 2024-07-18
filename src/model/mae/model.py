@@ -116,7 +116,7 @@ class TrackingMaskedAutoEncoder(LightningModule):
     def forward(self, x):
         x = x.permute(0, 3, 1, 2)
         latent, mask, ids_restore = self.encoder.masked_forward(x)
-        pred = self.decoder(latent, ids_restore)
+        pred = self.decoder.masked_forward(latent, ids_restore)
         loss = self.forward_loss(x, pred, mask)
         return loss, pred, mask
 

@@ -1,6 +1,9 @@
 import matplotlib.pyplot as plt
 import torch
 from matplotlib import animation
+from PIL import Image
+
+import constants
 from data.transforms import normalize_coordinates
 
 
@@ -107,6 +110,9 @@ class DualTrackingVisualization:
         fig.set_figheight(5)
         fig.set_figwidth(10)
 
+        ax_0.set_title("Masked Input")
+        ax_1.set_title("Model Output")
+
         for ax in [ax_0, ax_1]:
             ax.set_xlim(-1 * SCALING_CONSTANT, 1 * SCALING_CONSTANT)
             ax.set_ylim(-1 * SCALING_CONSTANT, 1 * SCALING_CONSTANT)
@@ -170,6 +176,7 @@ class DualTrackingVisualization:
         )
 
         plt.show()
+        # anim.save(f"{constants.ROOT_DIR}/data/visualizations/output.gif", writer="pillow", fps=5)
 
 
 def do_work(path: str):
